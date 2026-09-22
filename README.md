@@ -113,11 +113,25 @@ Exit code is non-zero when there is no data, so prompts degrade quietly.
 The dropdown lists all three windows with bars, reset countdowns and the age of
 the Fable reading. Green under 70%, amber 70–89, red at 90+.
 
-**Choosing what sits in the menu bar.** By default the title shows the
-**tightest** window — whichever is closest to its limit, which is the one that
-will actually stop you. To pin a specific one instead, click its row in the
-dropdown; a checkmark marks the tracked window. "Tightest window (auto)" returns
-to the default. The choice persists across relaunches.
+**Choosing what sits in the menu bar.** Under `Show in menu bar · pick one` the
+dropdown offers four choices as peers — the three windows, then auto:
+
+```
+  Show in menu bar  ·  pick one
+  5-hour             ▓▓▓▓▓░░░░░░░░░░░   33%
+     resets in 4h 29m
+  Weekly, all models ▓▓▓▓▓▓▓▓▓▓▓░░░░░   71%
+     resets in 2d 3h
+  Weekly, Fable      ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  100%
+     resets in 2d 3h · read 8m ago
+✓ Tightest of the three  (auto)
+     follows whichever is closest to its limit
+```
+
+Click any of the three windows to pin it, or "Tightest of the three" to let the
+title follow whichever is closest to its limit — the one that will actually stop
+you. That is the default. A checkmark marks the current choice, and it persists
+across relaunches.
 
 If you pin Fable before it has ever been synced, the title falls back to the
 tightest window and says so rather than showing nothing.

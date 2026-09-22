@@ -135,3 +135,85 @@ enum Fmt {
         return s < 60 ? "just now" : "\(duration(s)) ago"
     }
 }
+
+
+// MARK: - Menu contents
+
+/// One line of the dropdown, described without AppKit so it can be tested and
+/// printed. `main.swift` turns these into NSMenuItems and does nothing else,
+/// so what the tests check is what the menu shows.
+struct MenuRow {
+    enum Tint { case normal, secondary, tertiary, warning, quota(Double) }
+    enum Act { case none, select(String), refresh, quit }
+
+    var text: String
+    var tint: Tint = .normal
+    var size: CGFloat = 12
+    var mono: Bool = false
+    var act: Act = .none
+    var checked: Bool = false
+    var separator: Bool = false
+
+    static let sep = MenuRow(text: "", separator: true)
+}
+
+/// Builds the whole dropdown.
+///
+/// The three windows and "Tightest of the three" are deliberately laid out as
+/// four peers under one heading. An earlier version put the heading below the
+/// windows with only the auto option beneath it, which read as though auto were
+/// the only choice and the windows above were a static readout.
+func buildMenuRows(_ snap: Snapshot, choice: String) -> [MenuRow] {
+    var rows: [MenuRow] = []
+
+    rows.append(MenuRow(text: snap.plan.map { "Claude usage · \($0) plan" } ?? "Claude usage",
+                        tint: .secondary, size: 11))
+    rows.append(.sep)
+
+    if let err = snap.error {
+        rows.append(MenuRow(text: err, tint: .secondary))
+        rows.append(MenuRow(text: "Send a message in Claude Code to fill it.",
+                            tint: .tertiary, size: 11))
+    } else {
+        rows.append(MenuRow(text: "Show in menu bar  ·  pick one", tint: .secondary, size: 11))
+
+        for q in snap.quotas {
+            let pct = String(format: "%3d%%", Int(q.pct.rounded()))
+            let name = q.label.padding(toLength: 19, withPad: " ", startingAt: 0)
+            rows.append(MenuRow(text: "\(name)\(Fmt.bar(q.pct))  \(pct)",
+                                tint: .quota(q.pct), mono: true,
+                                act: .select(q.key), checked: choice == q.key))
+
+            var notes: [String] = []
+            if let r = q.resetsAt { notes.append("resets in \(Fmt.duration(r.timeIntervalSinceNow))") }
+            if let c = q.capturedAt { notes.append("read \(Fmt.age(c))") }
+            if !notes.isEmpty {
+                rows.append(MenuRow(text: "   " + notes.joined(separator: " · "),
+                                    tint: .tertiary, size: 10, mono: true))
+            }
+        }
+
+        rows.append(MenuRow(text: "Tightest of the three  (auto)",
+                            act: .select(Tracked.auto), checked: choice == Tracked.auto))
+        rows.append(MenuRow(text: "   follows whichever is closest to its limit",
+                            tint: .tertiary, size: 10, mono: true))
+
+        if snap.isPinnedUnavailable(choice) {
+            rows.append(MenuRow(text: "   pinned window unavailable — showing tightest",
+                                tint: .warning, size: 10, mono: true))
+        }
+        if !snap.quotas.contains(where: { $0.key == "fable" }) {
+            rows.append(.sep)
+            rows.append(MenuRow(text: "Fable not recorded — run /usage-sync in Claude Code",
+                                tint: .tertiary, size: 10))
+        }
+    }
+
+    rows.append(.sep)
+    if let u = snap.updatedAt {
+        rows.append(MenuRow(text: "updated \(Fmt.age(u))", tint: .tertiary, size: 10))
+    }
+    rows.append(MenuRow(text: "Refresh Now", act: .refresh))
+    rows.append(MenuRow(text: "Quit", act: .quit))
+    return rows
+}

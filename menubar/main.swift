@@ -67,78 +67,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.toolTip = lines.joined(separator: "\n")
     }
 
-    private func row(_ text: String, color: NSColor? = nil, size: CGFloat = 12,
-                     mono: Bool = false, selects: String? = nil, checked: Bool = false) -> NSMenuItem {
+    /// Turns one MenuRow into an NSMenuItem. All layout decisions live in
+    /// buildMenuRows; this only maps them onto AppKit.
+    private func item(_ r: MenuRow) -> NSMenuItem {
+        if r.separator { return .separator() }
+
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        if let key = selects {
+        switch r.act {
+        case .none: break
+        case .select(let key):
             item.action = #selector(selectWindow(_:))
             item.target = self
             item.representedObject = key
-            item.state = checked ? .on : .off
+            item.state = r.checked ? .on : .off
+        case .refresh:
+            item.action = #selector(manualRefresh)
+            item.target = self
+            item.keyEquivalent = "r"
+        case .quit:
+            item.action = #selector(NSApplication.terminate(_:))
+            item.keyEquivalent = "q"
         }
-        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-                        : NSFont.systemFont(ofSize: size)
+
+        let color: NSColor
+        switch r.tint {
+        case .normal:      color = .labelColor
+        case .secondary:   color = .secondaryLabelColor
+        case .tertiary:    color = .tertiaryLabelColor
+        case .warning:     color = .systemOrange
+        case .quota(let p): color = p >= 90 ? .systemRed : (p >= 70 ? .systemOrange : .systemGreen)
+        }
+        let font = r.mono ? NSFont.monospacedSystemFont(ofSize: r.size, weight: .regular)
+                          : NSFont.systemFont(ofSize: r.size)
         item.attributedTitle = NSAttributedString(
-            string: text,
-            attributes: [.font: font, .foregroundColor: color ?? NSColor.labelColor])
+            string: r.text, attributes: [.font: font, .foregroundColor: color])
         return item
     }
 
     private func renderMenu(_ snap: Snapshot) {
         let menu = statusItem.menu!
         menu.removeAllItems()
-
-        let header = snap.plan.map { "Claude usage · \($0) plan" } ?? "Claude usage"
-        menu.addItem(row(header, color: .secondaryLabelColor, size: 11))
-        menu.addItem(.separator())
-
-        if let err = snap.error {
-            menu.addItem(row(err, color: .secondaryLabelColor))
-            menu.addItem(row("Send a message in Claude Code to fill it.",
-                             color: .tertiaryLabelColor, size: 11))
-        } else {
-            for q in snap.quotas {
-                let pct = String(format: "%3d%%", Int(q.pct.rounded()))
-                let name = q.label.padding(toLength: 19, withPad: " ", startingAt: 0)
-                menu.addItem(row("\(name)\(Fmt.bar(q.pct))  \(pct)",
-                                 color: q.color, mono: true,
-                                 selects: q.key, checked: choice == q.key))
-
-                var notes: [String] = []
-                if let r = q.resetsAt { notes.append("resets in \(Fmt.duration(r.timeIntervalSinceNow))") }
-                if let c = q.capturedAt { notes.append("read \(Fmt.age(c))") }
-                if !notes.isEmpty {
-                    menu.addItem(row("   " + notes.joined(separator: " · "),
-                                     color: .tertiaryLabelColor, size: 10, mono: true))
-                }
-            }
-            menu.addItem(.separator())
-            menu.addItem(row("Show in menu bar", color: .secondaryLabelColor, size: 11))
-            menu.addItem(row("Tightest window (auto)",
-                             selects: Tracked.auto, checked: choice == Tracked.auto))
-            menu.addItem(row("   click a row above to pin one instead",
-                             color: .tertiaryLabelColor, size: 10))
-            if snap.isPinnedUnavailable(choice) {
-                menu.addItem(row("   pinned window unavailable — showing tightest",
-                                 color: .systemOrange, size: 10))
-            }
-
-            if !snap.quotas.contains(where: { $0.key == "fable" }) {
-                menu.addItem(.separator())
-                menu.addItem(row("Fable not recorded — run /usage-sync in Claude Code",
-                                 color: .tertiaryLabelColor, size: 10))
-            }
-        }
-
-        menu.addItem(.separator())
-        if let u = snap.updatedAt {
-            menu.addItem(row("updated \(Fmt.age(u))", color: .tertiaryLabelColor, size: 10))
-        }
-        let refreshItem = NSMenuItem(title: "Refresh Now", action: #selector(manualRefresh), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        for r in buildMenuRows(snap, choice: choice) { menu.addItem(item(r)) }
     }
 
     @objc private func manualRefresh() { refresh() }

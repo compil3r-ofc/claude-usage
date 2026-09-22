@@ -80,5 +80,54 @@ try? FileManager.default.removeItem(at: tmp)
 s = CacheLoader.load()
 check("missing", s.error ?? "nil", "No usage data yet")
 
+// The dropdown as the user reads it. buildMenuRows is the single source of
+// truth for the real menu, so this is not a mock.
+write("""
+{"updated_at":\(now),"plan":"Max",
+ "five_hour":{"used_percentage":33,"resets_at":\(now+16200)},
+ "seven_day":{"used_percentage":71,"resets_at":\(now+187200)},
+ "fable":{"used_percentage":100,"resets_at":\(now+187200),"captured_at":\(now-480)}}
+""")
+let menuSnap = CacheLoader.load()
+
+func render(_ choice: String) {
+    for r in buildMenuRows(menuSnap, choice: choice) {
+        if r.separator { print("   " + String(repeating: "\u{2500}", count: 48)); continue }
+        var selectable = false
+        if case .select = r.act { selectable = true }
+        let mark = r.checked ? " \u{2713} " : (selectable ? "   " : "   ")
+        print("  \(mark)\(r.text)")
+    }
+}
+
+print("\n--- dropdown, default (auto) ---")
+render(Tracked.auto)
+print("\n--- dropdown, Weekly all models pinned ---")
+render("seven_day")
+print("")
+
+print("menu structure:")
+let rows = buildMenuRows(menuSnap, choice: Tracked.auto)
+let picks = rows.filter { if case .select = $0.act { return true }; return false }
+check("four choices offered", "\(picks.count)", "4")
+check("choice order", picks.compactMap { r -> String? in
+    if case .select(let k) = r.act { return k }; return nil
+}.joined(separator: ","), "five_hour,seven_day,fable,auto")
+check("heading precedes choices",
+      "\(rows.firstIndex(where: { $0.text.hasPrefix("Show in menu bar") })! < rows.firstIndex(where: { if case .select = $0.act { return true }; return false })!)",
+      "true")
+check("exactly one checked", "\(picks.filter(\.checked).count)", "1")
+check("auto checked by default",
+      "\(picks.first(where: { $0.checked }).map { r -> Bool in if case .select(let k) = r.act { return k == Tracked.auto }; return false } ?? false)",
+      "true")
+let pinned = buildMenuRows(menuSnap, choice: "seven_day")
+    .filter { if case .select = $0.act { return true }; return false }
+check("pinning moves the check", "\(pinned.filter(\.checked).count)", "1")
+check("pinned row is the right one",
+      "\(pinned.first(where: { $0.checked }).map { r -> Bool in if case .select(let k) = r.act { return k == "seven_day" }; return false } ?? false)",
+      "true")
+
+try? FileManager.default.removeItem(at: tmp)
+
 print(failures == 0 ? "\nAll checks passed." : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
