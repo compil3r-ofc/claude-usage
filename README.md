@@ -58,6 +58,13 @@ cd menubar && ./build.sh && open ClaudeUsage.app
 ```
 
 Needs only Xcode Command Line Tools — no Xcode, no Homebrew, no SwiftBar.
+
+The build pins a deployment target of macOS 11.0 rather than inheriting the build
+machine's. Without that, `swiftc` bakes the *building* Mac's OS version into the
+binary, and LaunchServices — which reads that, not `Info.plist` — refuses to open
+it on any older Mac with `-10825`. Override with `DEPLOY_TARGET=13.0 ./build.sh`
+if you need a different floor. The app is built for the architecture you build on,
+so build it on each Mac rather than copying the bundle between them.
 To keep it around: `cp -R ClaudeUsage.app /Applications/` and add it under
 System Settings → General → Login Items.
 
