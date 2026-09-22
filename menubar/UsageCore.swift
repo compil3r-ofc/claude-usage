@@ -16,6 +16,12 @@ struct Quota {
     let resetsAt: Date?
     let capturedAt: Date?
 
+    /// Short label shown beside the percentage in the menu bar. A bare number is
+    /// ambiguous: with "tightest" tracking it silently switches between windows,
+    /// so the same menu bar can read 44% (5-hour) and then 39% (weekly) and look
+    /// like it is wrong rather than like it changed which window it is showing.
+    var badge: String { short }
+
     var color: NSColor {
         if pct >= 90 { return .systemRed }
         if pct >= 70 { return .systemOrange }

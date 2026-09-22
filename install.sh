@@ -47,9 +47,15 @@ if [ -n "$existing" ] \
 else
   tmp=$(mktemp)
   "$JQ" --arg cmd "$REPO_Q/statusline.sh" \
-     '.statusLine = {type:"command", command:$cmd, padding:0, refreshInterval:60}' \
+     '.statusLine = {type:"command", command:$cmd, padding:0}
+      | del(.statusLine.refreshInterval)' \
      "$SETTINGS" > "$tmp" && mv -f "$tmp" "$SETTINGS"
   ok "status line registered (backup alongside settings.json)"
+  # refreshInterval is deliberately unset. With it, every session re-runs the
+  # status line each minute, including ones idle for hours, and writes back the
+  # rate limits from its last API response — overwriting fresh numbers with
+  # stale ones. Without it the script runs on real events, so each write
+  # coincides with that session actually receiving current numbers.
 fi
 
 # 2. /usage-sync slash command

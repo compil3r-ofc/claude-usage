@@ -58,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             attributes: [.font: NSFont.systemFont(ofSize: 9),
                          .foregroundColor: stale ? NSColor.secondaryLabelColor : t.color])
         s.append(NSAttributedString(
+            string: "\(t.badge) ",
+            attributes: [.font: NSFont.systemFont(ofSize: 10),
+                         .foregroundColor: NSColor.secondaryLabelColor]))
+        s.append(NSAttributedString(
             string: "\(Int(t.pct.rounded()))%",
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
                          .foregroundColor: stale ? NSColor.secondaryLabelColor : NSColor.labelColor]))

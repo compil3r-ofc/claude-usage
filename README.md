@@ -37,6 +37,15 @@ them need to authenticate. Both writers take a lock around their read-modify-wri
 so a render and a `/usage-sync` happening at the same moment cannot clobber each
 other.
 
+**Why `refreshInterval` is not set.** The payload carries no timestamp saying when
+its rate limits were read, and a session keeps reporting the numbers from its last
+API response. With `refreshInterval`, every open session — including ones idle for
+hours — re-runs the status line each minute and writes those stale numbers back,
+so the displayed value visibly bounces between sessions. Without it the script runs
+on real events, so each write coincides with that session actually receiving current
+numbers. Resuming an old session still writes its stale reading once; that corrects
+itself on the session's next message.
+
 ## Install
 
 ```bash
@@ -80,6 +89,10 @@ windows are always live. Nothing ever shows you a stale number without saying so
 
 We deliberately did not poll it headlessly — every poll would spend tokens from
 the very quota being measured.
+
+`/usage-sync` needs the **Claude desktop app**, which provides the tool that
+reads the number. A terminal `claude` session has no scriptable equivalent, so on
+those machines Fable stays unrecorded while the other two numbers work normally.
 
 ## The two surfaces compared
 

@@ -9,9 +9,19 @@ The status line collector keeps the 5-hour and weekly-all-models numbers current
 on its own, but Claude Code does not expose the per-model (Fable) limit to any
 script. This command reads it from the session and writes it into the cache.
 
+**This command only works in the Claude desktop app.** The usage numbers come
+from `mcp__ccd_session_mgmt__get_usage`, a tool the desktop app provides. In a
+terminal `claude` session that tool does not exist, and there is no scriptable
+substitute — the CLI exposes `/usage` interactively but nothing a command can
+read. On those machines the 5-hour and weekly numbers still work; Fable simply
+shows as not recorded.
+
 Do this:
 
-1. Call `mcp__ccd_session_mgmt__get_usage`.
+1. Call `mcp__ccd_session_mgmt__get_usage`. If the tool is not available in this
+   session, stop and tell the user that syncing Fable needs the Claude desktop
+   app, and that the other two numbers are unaffected. Do not try other tools,
+   shell commands or the API to find the number — there is no other source.
 2. In `plan.windows`, find the entry whose `label` is `Weekly · Fable`. Take its
    `percentUsed` and `resetsAt` (an ISO-8601 UTC timestamp). Also note `plan.plan`
    (for example `Max`).
