@@ -65,6 +65,25 @@ check("no reset time kept",  "\(noReset.quotas.count)", "2")
 check("kept without countdown",
       "\(noReset.quotas.first(where: { $0.key == "fable" })?.resetsAt == nil)", "true")
 
+print("staleness:")
+// A number nobody is refreshing must not look like a live one.
+write("""
+{"updated_at":\(now),"five_hour":{"used_percentage":33,"resets_at":\(now+16200)}}
+""")
+check("fresh cache not stale", "\(CacheLoader.load().isStale)", "false")
+write("""
+{"updated_at":\(now - 400),"five_hour":{"used_percentage":33,"resets_at":\(now+16200)}}
+""")
+let old = CacheLoader.load()
+check("old cache is stale",   "\(old.isStale)", "true")
+check("stale warned in menu",
+      "\(buildMenuRows(old, choice: Tracked.auto).contains { $0.text.contains("nothing is updating") })", "true")
+write("""
+{"updated_at":\(now),"five_hour":{"used_percentage":33,"resets_at":\(now+16200)}}
+""")
+check("no warning when fresh",
+      "\(buildMenuRows(CacheLoader.load(), choice: Tracked.auto).contains { $0.text.contains("nothing is updating") })", "false")
+
 // Pinning Fable when it was never synced must fall back, not blank the menu bar.
 write("""
 {"updated_at":\(now),

@@ -49,20 +49,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              .foregroundColor: NSColor.secondaryLabelColor])
             return
         }
-        // Colored dot + the percentage of the tracked window.
+        // Colored dot + the percentage of the tracked window. When the cache has
+        // gone stale the dot is hollow and the number dimmed, so an out-of-date
+        // reading never passes for a live one.
+        let stale = snap.isStale
         let s = NSMutableAttributedString(
-            string: "\u{25CF} ",
-            attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: t.color])
+            string: stale ? "\u{25CB} " : "\u{25CF} ",
+            attributes: [.font: NSFont.systemFont(ofSize: 9),
+                         .foregroundColor: stale ? NSColor.secondaryLabelColor : t.color])
         s.append(NSAttributedString(
             string: "\(Int(t.pct.rounded()))%",
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-                         .foregroundColor: NSColor.labelColor]))
+                         .foregroundColor: stale ? NSColor.secondaryLabelColor : NSColor.labelColor]))
         button.attributedTitle = s
         var lines = snap.quotas.map { q -> String in
             let mark = (q.key == t.key) ? "\u{25B8} " : "   "
             return "\(mark)\(q.label): \(Int(q.pct.rounded()))%"
         }
         if choice == Tracked.auto { lines.append("\nTracking: tightest window") }
+        if snap.isStale, let u = snap.updatedAt {
+            lines.append("\nStale: last updated \(Fmt.age(u))")
+        }
         if snap.isPinnedUnavailable(choice) { lines.append("\nPinned window unavailable; showing tightest") }
         button.toolTip = lines.joined(separator: "\n")
     }

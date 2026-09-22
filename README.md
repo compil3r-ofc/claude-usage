@@ -141,6 +141,13 @@ tightest window and says so rather than showing nothing.
 It re-reads the cache every 60 seconds, and always repaints just before the
 dropdown opens, so what you see when you click is current.
 
+**Stale data is marked.** The collector writes on every render and at least once
+a minute while a session is open, so if the cache has not moved in five minutes
+nothing is feeding it. The menu bar dot goes hollow and the number dims, and the
+dropdown says so. A stale reading looks identical to a live one otherwise, which
+is worse than showing nothing — this is the most common thing to hit, because the
+status line only starts running in sessions opened after `install.sh` ran.
+
 Run the checks with `menubar/selftest.sh`, and the shell-side concurrency test
 with `tests/concurrency.sh`.
 

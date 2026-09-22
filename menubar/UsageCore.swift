@@ -53,6 +53,17 @@ extension Snapshot {
         return quotas.first { $0.key == choice } ?? tightest
     }
 
+    /// The collector writes on every status line render, and at least once a
+    /// minute while any session is open. Older than this and nothing is feeding
+    /// the cache, so the numbers on screen have drifted from reality. A stale
+    /// number looks exactly like a fresh one, which is worse than showing none.
+    static let staleAfter: TimeInterval = 300
+
+    var isStale: Bool {
+        guard let u = updatedAt else { return true }
+        return Date().timeIntervalSince(u) > Snapshot.staleAfter
+    }
+
     /// True when the pinned window is unavailable, so the title is showing a stand-in.
     func isPinnedUnavailable(_ choice: String) -> Bool {
         choice != Tracked.auto && !quotas.contains { $0.key == choice }
@@ -211,7 +222,12 @@ func buildMenuRows(_ snap: Snapshot, choice: String) -> [MenuRow] {
 
     rows.append(.sep)
     if let u = snap.updatedAt {
-        rows.append(MenuRow(text: "updated \(Fmt.age(u))", tint: .tertiary, size: 10))
+        rows.append(MenuRow(text: "updated \(Fmt.age(u))",
+                            tint: snap.isStale ? .warning : .tertiary, size: 10))
+    }
+    if snap.isStale && snap.error == nil {
+        rows.append(MenuRow(text: "nothing is updating the cache \u{2014} open a Claude Code session",
+                            tint: .warning, size: 10))
     }
     rows.append(MenuRow(text: "Refresh Now", act: .refresh))
     rows.append(MenuRow(text: "Quit", act: .quit))
