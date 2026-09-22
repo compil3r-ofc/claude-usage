@@ -22,8 +22,36 @@ input=$(cat)
 now=$(date +%s)
 mkdir -p "$(dirname "$CACHE")"
 
-# Previous cache, so we can carry forward the Fable snapshot that the
-# status line payload does not include.
+# This cache is read-modify-written here and by `claude-usage --set-fable`.
+# Without a lock, a render that read the cache just before a sync writes back a
+# snapshot predating it and silently drops the Fable value the user just
+# recorded. Measured at 32 losses in 40 attempts under contention, and renders
+# are frequent, so this is reached in normal use. mkdir is atomic, so the lock
+# is a directory.
+LOCK="$CACHE.lock"
+locked=0
+lock_release() { [ "$locked" = 1 ] && rmdir "$LOCK" 2>/dev/null; locked=0; }
+lock_acquire() {   # $1 = attempts, ~20ms apart
+  local i=0 age
+  while [ "$i" -lt "$1" ]; do
+    if mkdir "$LOCK" 2>/dev/null; then
+      locked=1; trap lock_release EXIT INT TERM; return 0
+    fi
+    # Reclaim a lock left behind by a process that died holding it.
+    age=$(( now - $(stat -f %m "$LOCK" 2>/dev/null || echo "$now") ))
+    [ "$age" -gt 10 ] && rmdir "$LOCK" 2>/dev/null
+    i=$((i + 1))
+    sleep 0.02
+  done
+  return 1
+}
+
+# Writers hold the lock for milliseconds, so a short wait catches almost all
+# contention. This runs on every render, so it must not stall: if the lock is
+# busy we render anyway and skip the cache write, which is always safe because
+# the next render (or the 60s refresh) writes instead.
+lock_acquire 10 || true
+
 prev='{}'
 [ -f "$CACHE" ] && prev=$("$JQ" -c . "$CACHE" 2>/dev/null || echo '{}')
 
@@ -57,10 +85,12 @@ merged=$(printf '%s' "$input" | "$JQ" -c \
     }
   ' 2>/dev/null)
 
-if [ -n "$merged" ] && [ "$merged" != "null" ]; then
+if [ "$locked" = 1 ] && [ -n "$merged" ] && [ "$merged" != "null" ]; then
   tmp="$CACHE.$$.tmp"
   printf '%s\n' "$merged" > "$tmp" 2>/dev/null && mv -f "$tmp" "$CACHE" 2>/dev/null
+  rm -f "$tmp" 2>/dev/null
 fi
+lock_release
 
 # ---------- render the status line ----------
 

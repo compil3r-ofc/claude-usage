@@ -33,7 +33,9 @@ statusline.sh ──────────────► ~/.claude/usage-cach
 ```
 
 Because the cache is just a file, any number of readers can share it and none of
-them need to authenticate.
+them need to authenticate. Both writers take a lock around their read-modify-write,
+so a render and a `/usage-sync` happening at the same moment cannot clobber each
+other.
 
 ## Install
 
@@ -139,7 +141,8 @@ tightest window and says so rather than showing nothing.
 It re-reads the cache every 60 seconds, and always repaints just before the
 dropdown opens, so what you see when you click is current.
 
-Run the checks with `menubar/selftest.sh`.
+Run the checks with `menubar/selftest.sh`, and the shell-side concurrency test
+with `tests/concurrency.sh`.
 
 ## Sharing with the team
 
@@ -160,4 +163,5 @@ say so rather than showing zeros).
 | `menubar/main.swift` | Menu bar UI |
 | `menubar/build.sh` | Builds `ClaudeUsage.app` |
 | `menubar/selftest.sh` | Checks bars, durations and cache edge cases |
+| `tests/concurrency.sh` | Checks that concurrent renders and syncs do not lose data |
 | `install.sh` | Wires it all up |

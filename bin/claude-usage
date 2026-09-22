@@ -74,6 +74,23 @@ if [[ "${1:-}" == "--set-fable" ]]; then
     || die "reset time must be a Unix epoch in seconds, got: ${3:-<missing>}"
 
   mkdir -p ${CACHE:h}
+
+  # Serialize against the status line collector, which read-modify-writes this
+  # same file on every render. Without the lock a render that read the cache
+  # moments ago overwrites this sync, and the value the user just recorded
+  # disappears. A sync is rare and user-initiated, so unlike the collector it
+  # waits (up to ~3s) and reports failure rather than skipping the write.
+  lock=$CACHE.lock
+  integer locked=0 i=0
+  while (( i < 150 )); do
+    if mkdir $lock 2>/dev/null; then locked=1; break; fi
+    age=$(( EPOCHSECONDS - $(stat -f %m $lock 2>/dev/null || print $EPOCHSECONDS) ))
+    (( age > 10 )) && rmdir $lock 2>/dev/null   # left by a process that died
+    (( i++ )); sleep 0.02
+  done
+  (( locked )) || die "timed out waiting for $lock; another process is writing the cache"
+  trap "rmdir $lock 2>/dev/null" EXIT INT TERM
+
   prev='{}'; [[ -f $CACHE ]] && prev=$($JQ -c . $CACHE 2>/dev/null || print '{}')
   tmp=$CACHE.$$.tmp
   if print -r -- "$prev" | $JQ -c \
@@ -82,10 +99,13 @@ if [[ "${1:-}" == "--set-fable" ]]; then
         '. + {fable:{used_percentage:$pct, resets_at:$rs, captured_at:$now}}
            + (if $plan == "" then {} else {plan:$plan} end)' \
         > $tmp && mv -f $tmp $CACHE; then
+    rm -f $tmp
+    rmdir $lock 2>/dev/null
     print -- "Fable weekly recorded: ${local_pct}%"
     exit 0
   else
     rm -f $tmp
+    rmdir $lock 2>/dev/null
     die "could not write $CACHE"
   fi
 fi
