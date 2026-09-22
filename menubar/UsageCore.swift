@@ -33,6 +33,32 @@ struct Snapshot {
     var tightest: Quota? { quotas.max(by: { $0.pct < $1.pct }) }
 }
 
+// MARK: - Which window the menu bar title tracks
+
+enum Tracked {
+    static let defaultsKey = "trackedWindow"
+    static let auto = "auto"
+    /// Selectable keys, in the order the menu lists them.
+    static let keys = ["five_hour", "seven_day", "fable"]
+}
+
+extension Snapshot {
+    /// The window the menu bar title shows.
+    ///
+    /// `auto` follows whichever window is tightest. A specific key pins that one,
+    /// but falls back to the tightest when that window is not in the cache — Fable
+    /// is often unrecorded, and an empty menu bar would be worse than a real number.
+    func tracked(_ choice: String) -> Quota? {
+        if choice == Tracked.auto { return tightest }
+        return quotas.first { $0.key == choice } ?? tightest
+    }
+
+    /// True when the pinned window is unavailable, so the title is showing a stand-in.
+    func isPinnedUnavailable(_ choice: String) -> Bool {
+        choice != Tracked.auto && !quotas.contains { $0.key == choice }
+    }
+}
+
 // MARK: - Loading
 
 enum CacheLoader {

@@ -7,15 +7,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
 
+    /// Which window the title tracks. Persisted, so it survives a relaunch.
+    private var choice: String {
+        get { UserDefaults.standard.string(forKey: Tracked.defaultsKey) ?? Tracked.auto }
+        set { UserDefaults.standard.set(newValue, forKey: Tracked.defaultsKey); refresh() }
+    }
+
+    @objc private func selectWindow(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        choice = key
+    }
+
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
         refresh()
-        // The cache only changes when Claude Code renders its status line;
-        // a slow poll is plenty and costs nothing.
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        // The cache only changes when Claude Code renders its status line, and the
+        // menu repaints on open anyway, so a slow poll is plenty and costs nothing.
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }
@@ -31,14 +42,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func renderTitle(_ snap: Snapshot) {
         guard let button = statusItem.button else { return }
-        guard let t = snap.tightest else {
+        guard let t = snap.tracked(choice) else {
             button.attributedTitle = NSAttributedString(
                 string: "Claude —",
                 attributes: [.font: NSFont.menuBarFont(ofSize: 0),
                              .foregroundColor: NSColor.secondaryLabelColor])
             return
         }
-        // Colored dot + the percentage of whichever window is tightest.
+        // Colored dot + the percentage of the tracked window.
         let s = NSMutableAttributedString(
             string: "\u{25CF} ",
             attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: t.color])
@@ -47,13 +58,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
                          .foregroundColor: NSColor.labelColor]))
         button.attributedTitle = s
-        button.toolTip = snap.quotas
-            .map { "\($0.label): \(Int($0.pct.rounded()))%" }
-            .joined(separator: "\n")
+        var lines = snap.quotas.map { q -> String in
+            let mark = (q.key == t.key) ? "\u{25B8} " : "   "
+            return "\(mark)\(q.label): \(Int(q.pct.rounded()))%"
+        }
+        if choice == Tracked.auto { lines.append("\nTracking: tightest window") }
+        if snap.isPinnedUnavailable(choice) { lines.append("\nPinned window unavailable; showing tightest") }
+        button.toolTip = lines.joined(separator: "\n")
     }
 
-    private func row(_ text: String, color: NSColor? = nil, size: CGFloat = 12, mono: Bool = false) -> NSMenuItem {
+    private func row(_ text: String, color: NSColor? = nil, size: CGFloat = 12,
+                     mono: Bool = false, selects: String? = nil, checked: Bool = false) -> NSMenuItem {
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        if let key = selects {
+            item.action = #selector(selectWindow(_:))
+            item.target = self
+            item.representedObject = key
+            item.state = checked ? .on : .off
+        }
         let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
                         : NSFont.systemFont(ofSize: size)
         item.attributedTitle = NSAttributedString(
@@ -78,7 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for q in snap.quotas {
                 let pct = String(format: "%3d%%", Int(q.pct.rounded()))
                 let name = q.label.padding(toLength: 19, withPad: " ", startingAt: 0)
-                menu.addItem(row("\(name)\(Fmt.bar(q.pct))  \(pct)", color: q.color, mono: true))
+                menu.addItem(row("\(name)\(Fmt.bar(q.pct))  \(pct)",
+                                 color: q.color, mono: true,
+                                 selects: q.key, checked: choice == q.key))
 
                 var notes: [String] = []
                 if let r = q.resetsAt { notes.append("resets in \(Fmt.duration(r.timeIntervalSinceNow))") }
@@ -88,6 +112,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                      color: .tertiaryLabelColor, size: 10, mono: true))
                 }
             }
+            menu.addItem(.separator())
+            menu.addItem(row("Show in menu bar", color: .secondaryLabelColor, size: 11))
+            menu.addItem(row("Tightest window (auto)",
+                             selects: Tracked.auto, checked: choice == Tracked.auto))
+            menu.addItem(row("   click a row above to pin one instead",
+                             color: .tertiaryLabelColor, size: 10))
+            if snap.isPinnedUnavailable(choice) {
+                menu.addItem(row("   pinned window unavailable — showing tightest",
+                                 color: .systemOrange, size: 10))
+            }
+
             if !snap.quotas.contains(where: { $0.key == "fable" }) {
                 menu.addItem(.separator())
                 menu.addItem(row("Fable not recorded — run /usage-sync in Claude Code",

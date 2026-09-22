@@ -43,6 +43,27 @@ check("red at 100","\(s.quotas[2].color == .systemRed)", "true")
 check("green 33",  "\(s.quotas[0].color == .systemGreen)", "true")
 check("captured",  "\(s.quotas[2].capturedAt != nil)", "true")
 
+print("menu bar tracking:")
+check("auto -> tightest", s.tracked(Tracked.auto)?.short ?? "nil", "fable")
+check("pin 5h",           s.tracked("five_hour")?.short ?? "nil", "5h")
+check("pin wk",           s.tracked("seven_day")?.short ?? "nil", "wk")
+check("pin fable",        s.tracked("fable")?.short ?? "nil", "fable")
+check("pin available",    "\(s.isPinnedUnavailable("fable"))", "false")
+check("auto never flags", "\(s.isPinnedUnavailable(Tracked.auto))", "false")
+check("selectable keys",  Tracked.keys.joined(separator: ","), "five_hour,seven_day,fable")
+
+// Pinning Fable when it was never synced must fall back, not blank the menu bar.
+write("""
+{"updated_at":\(now),
+ "five_hour":{"used_percentage":33,"resets_at":\(now+16200)},
+ "seven_day":{"used_percentage":71,"resets_at":\(now+187200)}}
+""")
+let noFable = CacheLoader.load()
+check("fable gone",        "\(noFable.quotas.count)", "2")
+check("pin missing falls back", noFable.tracked("fable")?.short ?? "nil", "wk")
+check("flags unavailable", "\(noFable.isPinnedUnavailable("fable"))", "true")
+check("pin 5h still works", noFable.tracked("five_hour")?.short ?? "nil", "5h")
+
 // An expired window must be dropped, not shown as stale.
 write("""
 {"updated_at":\(now),"five_hour":{"used_percentage":50,"resets_at":\(now-10)}}

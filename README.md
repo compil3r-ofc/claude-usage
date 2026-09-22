@@ -79,7 +79,7 @@ the very quota being measured.
 | Shows                | all three, bars + countdowns         | tightest window always visible; all three in the dropdown |
 | Effort to read       | you type a command                   | zero — it is always on screen       |
 | Best for             | checking before a big job; scripting | ambient awareness while you work    |
-| Freshness            | reads cache at the moment you ask    | polls every 15s, repaints on open   |
+| Freshness            | reads cache at the moment you ask    | polls every 60s, repaints on open   |
 | Scriptable           | yes — `--short`, `--json`, exit codes| no                                  |
 | Install cost         | none beyond the repo                 | one `swiftc` build                  |
 | Dependencies         | `jq` (Apple ships it at `/usr/bin/jq`) | Xcode Command Line Tools          |
@@ -110,10 +110,20 @@ Exit code is non-zero when there is no data, so prompts degrade quietly.
 
 ## Menu bar app
 
-The title shows the **tightest** window — whichever is closest to its limit,
-which is the one that will actually stop you. Green under 70%, amber 70–89,
-red at 90+. The dropdown breaks out all three with bars, reset countdowns and
-the age of the Fable reading.
+The dropdown lists all three windows with bars, reset countdowns and the age of
+the Fable reading. Green under 70%, amber 70–89, red at 90+.
+
+**Choosing what sits in the menu bar.** By default the title shows the
+**tightest** window — whichever is closest to its limit, which is the one that
+will actually stop you. To pin a specific one instead, click its row in the
+dropdown; a checkmark marks the tracked window. "Tightest window (auto)" returns
+to the default. The choice persists across relaunches.
+
+If you pin Fable before it has ever been synced, the title falls back to the
+tightest window and says so rather than showing nothing.
+
+It re-reads the cache every 60 seconds, and always repaints just before the
+dropdown opens, so what you see when you click is current.
 
 Run the checks with `menubar/selftest.sh`.
 
