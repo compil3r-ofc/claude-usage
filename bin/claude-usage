@@ -1,0 +1,169 @@
+#!/usr/bin/env zsh
+# claude-usage — report how much of your Claude plan is left.
+#
+# Reads ~/.claude/usage-cache.json, which is kept current by the
+# statusline.sh collector that Claude Code runs on every render.
+
+emulate -L zsh
+setopt no_unset pipe_fail
+
+CACHE="${CLAUDE_USAGE_CACHE:-$HOME/.claude/usage-cache.json}"
+JQ=/usr/bin/jq
+(( $+commands[jq] )) && [[ ! -x $JQ ]] && JQ=jq
+
+BAR_W=20
+FILL=▓
+TRACK=░
+zmodload zsh/datetime 2>/dev/null
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  R=$'\033[0m'; D=$'\033[2m'; B=$'\033[1m'
+  GRN=$'\033[32m'; YLW=$'\033[33m'; RED=$'\033[31m'
+else
+  R=""; D=""; B=""; GRN=""; YLW=""; RED=""
+fi
+
+die() { print -u2 -- "claude-usage: $*"; exit 1 }
+
+hue() {  # pct -> color
+  local p=${1%%.*}
+  (( p >= 90 )) && { print -n -- "$RED"; return }
+  (( p >= 70 )) && { print -n -- "$YLW"; return }
+  print -n -- "$GRN"
+}
+
+bar() {  # pct -> progress bar, clamped to 0..100
+  local -i filled=$(( $1 * BAR_W / 100 ))
+  (( filled < 0 )) && filled=0
+  (( filled == 0 && $1 > 0 )) && filled=1   # never show an empty bar for real usage
+  (( filled > BAR_W )) && filled=$BAR_W
+  local out="" ; local -i i
+  for (( i = 0; i < filled; i++ ));        do out+=$FILL; done
+  for (( i = filled; i < BAR_W; i++ ));    do out+=$TRACK; done
+  print -n -- $out
+}
+
+human() {  # seconds -> "2d 4h" / "4h 45m" / "12m"
+  local -i s=$1
+  (( s <= 0 )) && { print -n -- "now"; return }
+  local -i d=$((s/86400)) h=$((s%86400/3600)) m=$((s%3600/60))
+  (( d > 0 )) && { print -n -- "${d}d ${h}h"; return }
+  (( h > 0 )) && { print -n -- "${h}h ${m}m"; return }
+  print -n -- "${m}m"
+}
+
+age() {  # epoch -> "12m ago"
+  local -i a=$(( EPOCHSECONDS - $1 ))
+  (( a < 60 )) && { print -n -- "just now"; return }
+  print -n -- "$(human $a) ago"
+}
+
+# ---- internal: record the Fable number captured inside a Claude session ----
+if [[ "${1:-}" == "--set-fable" ]]; then
+  [[ -n "${2:-}" ]] || die "--set-fable needs a percentage"
+  local_pct=$2; local_reset=${3:-0}; local_plan=${4:-}
+  mkdir -p ${CACHE:h}
+  prev='{}'; [[ -f $CACHE ]] && prev=$($JQ -c . $CACHE 2>/dev/null || print '{}')
+  print -r -- "$prev" | $JQ -c \
+      --argjson pct "$local_pct" --argjson rs "$local_reset" \
+      --arg plan "$local_plan" --argjson now "$EPOCHSECONDS" \
+      '. + {fable:{used_percentage:$pct, resets_at:$rs, captured_at:$now}}
+         + (if $plan == "" then {} else {plan:$plan} end)' \
+    > $CACHE.$$.tmp && mv -f $CACHE.$$.tmp $CACHE
+  print -- "Fable weekly recorded: ${local_pct}%"
+  exit 0
+fi
+
+[[ -f $CACHE ]] || {
+  print -- "No usage data yet."
+  print -- ""
+  print -- "The collector fills it from inside Claude Code. Set it up with:"
+  print -- "  ~/code/claude-usage/install.sh"
+  print -- ""
+  print -- "Then open any Claude Code session and send one message."
+  exit 1
+}
+
+data=$($JQ -c . $CACHE 2>/dev/null) || die "cache is not valid JSON: $CACHE"
+
+g() { print -r -- "$data" | $JQ -r "$1 // empty" 2>/dev/null }
+
+case "${1:-}" in
+  --json) print -r -- "$data" | $JQ .; exit 0 ;;
+  sync)
+    print -- "To refresh the Fable weekly number, run this inside any Claude Code session:"
+    print -- "  ${B}/usage-sync${R}"
+    exit 0 ;;
+  -h|--help)
+    print -- "usage: claude-usage [-s|--short] [--json] [sync]"
+    print -- ""
+    print -- "  (no args)     full report with bars and reset countdowns"
+    print -- "  -s, --short   one-line summary, good for a shell prompt"
+    print -- "  --json        raw cache"
+    print -- "  sync          how to refresh the Fable number"
+    exit 0 ;;
+esac
+
+updated=$(g '.updated_at'); : ${updated:=0}
+
+# label:jq-key
+rows=( "5-hour:five_hour" "Weekly, all models:seven_day" "Weekly, Fable:fable" )
+
+if [[ "${1:-}" == "-s" || "${1:-}" == "--short" ]]; then
+  parts=()
+  for row in $rows; do
+    lbl=${row%%:*}; key=${row##*:}
+    pct=$(g ".${key}.used_percentage"); [[ -z $pct ]] && continue
+    short=5h; [[ $key == seven_day ]] && short=wk; [[ $key == fable ]] && short=fbl
+    printf -v p '%.0f' $pct
+    parts+=( "${D}${short}${R} $(hue $p)${p}%${R}" )
+  done
+  (( ${#parts} == 0 )) && { print -- "no usage data"; exit 1 }
+  print -- "${(j: · :)parts}"
+  exit 0
+fi
+
+plan=$(g '.plan')
+print -- ""
+print -- "  ${B}Claude usage${R}${plan:+ ${D}·${R} $plan plan}"
+print -- ""
+
+any=0
+for row in $rows; do
+  lbl=${row%%:*}; key=${row##*:}
+  pct=$(g ".${key}.used_percentage")
+  [[ -z $pct ]] && continue
+  any=1
+  printf -v p '%.0f' $pct
+  c=$(hue $p)
+
+  resets=$(g ".${key}.resets_at")
+  note=""
+  if [[ -n $resets && $resets != 0 ]]; then
+    note="resets in $(human $(( resets - EPOCHSECONDS )))"
+  fi
+
+  cap=$(g ".${key}.captured_at")
+  stale=""
+  [[ -n $cap ]] && stale="  ${D}($(age $cap))${R}"
+
+  printf "  %-18s %s%s%s  %s%3d%%%s   %s%s%s%s\n" \
+    "$lbl" "$c" "$(bar $p)" "$R" "$c" "$p" "$R" "$D" "$note" "$R" "$stale"
+done
+
+if (( any == 0 )); then
+  print -- "  ${D}No rate-limit data recorded yet.${R}"
+  print -- "  ${D}Open a Claude Code session and send one message, then retry.${R}"
+  print -- ""
+  exit 1
+fi
+
+# Fable is the one number no background script can read; say so when missing.
+if [[ -z $(g '.fable.used_percentage') ]]; then
+  print -- ""
+  print -- "  ${D}Weekly, Fable not recorded — run ${R}/usage-sync${D} in a Claude session.${R}"
+fi
+
+print -- ""
+print -- "  ${D}updated $(age $updated)${R}"
+print -- ""

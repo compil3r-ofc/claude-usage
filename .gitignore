@@ -1,0 +1,5 @@
+# Built app bundle and intermediate binary — rebuild with menubar/build.sh
+menubar/ClaudeUsage.app/
+menubar/ClaudeUsage
+
+.DS_Store
