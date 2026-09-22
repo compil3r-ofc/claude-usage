@@ -61,17 +61,33 @@ age() {  # epoch -> "12m ago"
 # ---- internal: record the Fable number captured inside a Claude session ----
 if [[ "${1:-}" == "--set-fable" ]]; then
   [[ -n "${2:-}" ]] || die "--set-fable needs a percentage"
-  local_pct=$2; local_reset=${3:-0}; local_plan=${4:-}
+  local_pct=$2; local_reset=${3:-}; local_plan=${4:-}
+
+  # Both numbers go into the cache as raw JSON via --argjson, so they have to be
+  # validated here. Anything else writes a cache the readers cannot do arithmetic
+  # on, and they would fail with a raw interpreter error rather than a message.
+  [[ $local_pct =~ '^[0-9]+(\.[0-9]+)?$' ]] \
+    || die "percentage must be a number, got: $local_pct"
+  # A reset time of 0 used to be accepted; the collector then deleted the entry on
+  # its next render, so the number appeared and silently vanished. Require a real one.
+  [[ $local_reset =~ '^[0-9]+$' ]] && (( local_reset > 0 )) \
+    || die "reset time must be a Unix epoch in seconds, got: ${3:-<missing>}"
+
   mkdir -p ${CACHE:h}
   prev='{}'; [[ -f $CACHE ]] && prev=$($JQ -c . $CACHE 2>/dev/null || print '{}')
-  print -r -- "$prev" | $JQ -c \
-      --argjson pct "$local_pct" --argjson rs "$local_reset" \
-      --arg plan "$local_plan" --argjson now "$EPOCHSECONDS" \
-      '. + {fable:{used_percentage:$pct, resets_at:$rs, captured_at:$now}}
-         + (if $plan == "" then {} else {plan:$plan} end)' \
-    > $CACHE.$$.tmp && mv -f $CACHE.$$.tmp $CACHE
-  print -- "Fable weekly recorded: ${local_pct}%"
-  exit 0
+  tmp=$CACHE.$$.tmp
+  if print -r -- "$prev" | $JQ -c \
+        --argjson pct "$local_pct" --argjson rs "$local_reset" \
+        --arg plan "$local_plan" --argjson now "$EPOCHSECONDS" \
+        '. + {fable:{used_percentage:$pct, resets_at:$rs, captured_at:$now}}
+           + (if $plan == "" then {} else {plan:$plan} end)' \
+        > $tmp && mv -f $tmp $CACHE; then
+    print -- "Fable weekly recorded: ${local_pct}%"
+    exit 0
+  else
+    rm -f $tmp
+    die "could not write $CACHE"
+  fi
 fi
 
 [[ -f $CACHE ]] || {
@@ -114,6 +130,7 @@ if [[ "${1:-}" == "-s" || "${1:-}" == "--short" ]]; then
   for row in $rows; do
     lbl=${row%%:*}; key=${row##*:}
     pct=$(g ".${key}.used_percentage"); [[ -z $pct ]] && continue
+    [[ $pct =~ '^[0-9]+(\.[0-9]+)?$' ]] || continue   # skip a corrupt entry
     short=5h; [[ $key == seven_day ]] && short=wk; [[ $key == fable ]] && short=fbl
     printf -v p '%.0f' $pct
     parts+=( "${D}${short}${R} $(hue $p)${p}%${R}" )
@@ -133,6 +150,7 @@ for row in $rows; do
   lbl=${row%%:*}; key=${row##*:}
   pct=$(g ".${key}.used_percentage")
   [[ -z $pct ]] && continue
+  [[ $pct =~ '^[0-9]+(\.[0-9]+)?$' ]] || continue   # skip a corrupt entry
   any=1
   printf -v p '%.0f' $pct
   c=$(hue $p)

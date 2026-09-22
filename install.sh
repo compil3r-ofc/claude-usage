@@ -14,6 +14,18 @@ warn() { printf '  \033[33m!\033[0m %s\n' "$1"; }
 
 [ -n "$JQ" ] || { echo "jq is required (macOS 15+ ships it at /usr/bin/jq)"; exit 1; }
 
+# The install path is written into ~/.zshrc and into settings.json's statusLine
+# command, and a shell evaluates both. Single-quote it so nothing in the path can
+# ever be executed: without this, cloning into a directory named 'x$(curl ...)y'
+# would run that substitution in every new shell, permanently. Quoting also makes
+# paths containing spaces work, which they previously did not.
+shq() { local q=${1//\'/\'\\\'\'}; printf "'%s'" "$q"; }
+
+case "$REPO" in
+  *$'\n'*) echo "Install path contains a newline; move the repo elsewhere."; exit 1 ;;
+esac
+REPO_Q=$(shq "$REPO")
+
 bold "Installing claude-usage"
 mkdir -p "$CLAUDE_DIR/commands"
 
@@ -25,14 +37,16 @@ else
 fi
 
 existing=$("$JQ" -r '.statusLine.command // empty' "$SETTINGS")
-if [ -n "$existing" ] && [ "$existing" != "$REPO/statusline.sh" ]; then
+if [ -n "$existing" ] \
+   && [ "$existing" != "$REPO_Q/statusline.sh" ] \
+   && [ "$existing" != "$REPO/statusline.sh" ]; then
   warn "You already have a status line configured:"
   warn "    $existing"
   warn "Leaving it alone. To collect usage data, add this to that script:"
   warn "    $REPO/statusline.sh   (it reads stdin and passes it through)"
 else
   tmp=$(mktemp)
-  "$JQ" --arg cmd "$REPO/statusline.sh" \
+  "$JQ" --arg cmd "$REPO_Q/statusline.sh" \
      '.statusLine = {type:"command", command:$cmd, padding:0, refreshInterval:60}' \
      "$SETTINGS" > "$tmp" && mv -f "$tmp" "$SETTINGS"
   ok "status line registered (backup alongside settings.json)"
@@ -43,8 +57,10 @@ cp "$REPO/commands/usage-sync.md" "$CLAUDE_DIR/commands/usage-sync.md"
 ok "/usage-sync command installed"
 
 # 3. PATH
-LINE="export PATH=\"$REPO/bin:\$PATH\""
-if grep -qF "$REPO/bin" "$HOME/.zshrc" 2>/dev/null; then
+LINE="export PATH=$REPO_Q/bin:\"\$PATH\""
+# Match on the bare path so an existing line is found whether it was written by
+# this version or by the earlier unquoted one, and we never append a duplicate.
+if grep -qF "$REPO" "$HOME/.zshrc" 2>/dev/null; then
   ok "PATH already set in ~/.zshrc"
 else
   printf '\n# claude-usage\n%s\n' "$LINE" >> "$HOME/.zshrc"

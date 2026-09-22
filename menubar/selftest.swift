@@ -52,6 +52,19 @@ check("pin available",    "\(s.isPinnedUnavailable("fable"))", "false")
 check("auto never flags", "\(s.isPinnedUnavailable(Tracked.auto))", "false")
 check("selectable keys",  Tracked.keys.joined(separator: ","), "five_hour,seven_day,fable")
 
+// A window with no reset time is KEPT, with no countdown. statusline.sh's fresh()
+// must agree: it used to drop these, so the collector deleted entries the readers
+// were still showing. If this check and that jq function ever diverge again, a
+// synced Fable value silently disappears on the next render.
+write("""
+{"updated_at":\(now),"five_hour":{"used_percentage":33,"resets_at":\(now+16200)},
+ "fable":{"used_percentage":100,"resets_at":0,"captured_at":\(now)}}
+""")
+let noReset = CacheLoader.load()
+check("no reset time kept",  "\(noReset.quotas.count)", "2")
+check("kept without countdown",
+      "\(noReset.quotas.first(where: { $0.key == "fable" })?.resetsAt == nil)", "true")
+
 // Pinning Fable when it was never synced must fall back, not blank the menu bar.
 write("""
 {"updated_at":\(now),

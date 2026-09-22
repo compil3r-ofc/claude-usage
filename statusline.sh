@@ -31,8 +31,15 @@ merged=$(printf '%s' "$input" | "$JQ" -c \
   --argjson prev "$prev" \
   --argjson now "$now" \
   '
-  # Drop a cached window whose reset time has already passed.
-  def fresh(w): if (w|type) == "object" and (w.resets_at // 0) > $now then w else null end;
+  # Keep a window with no recorded reset time (there is simply no countdown to
+  # show); drop one whose reset time has passed. This rule must match the readers
+  # in bin/claude-usage and menubar/UsageCore.swift, or the collector deletes
+  # entries they are still displaying.
+  def fresh(w):
+    if (w|type) != "object" then null
+    elif (w.resets_at // 0) <= 0 then w
+    elif w.resets_at > $now then w
+    else null end;
 
   ($prev // {}) as $p
   | {
@@ -84,7 +91,7 @@ out=""
 [ -n "$branch" ] && out+=" ${DIM}${branch}${RESET}"
 [ -n "$model" ]  && out+="  ${model}"
 if [ -n "$ctx" ]; then
-  c=$(hue "$ctx"); out+="  ${DIM}ctx${RESET} ${c}$(printf '%.0f' "$ctx")%%${RESET}"
+  c=$(hue "$ctx"); out+="  ${DIM}ctx${RESET} ${c}$(printf '%.0f' "$ctx")%${RESET}"
 fi
 
 seg=""
@@ -93,8 +100,12 @@ for pair in "five_hour:5h" "seven_day:wk" "fable:fable"; do
   v=$(get ".${key}.used_percentage")
   [ -z "$v" ] && continue
   c=$(hue "$v")
-  seg+=" ${DIM}${lbl}${RESET} ${c}$(printf '%.0f' "$v")%%${RESET}"
+  seg+=" ${DIM}${lbl}${RESET} ${c}$(printf '%.0f' "$v")%${RESET}"
 done
 [ -n "$seg" ] && out+="  ${DIM}│${RESET} ${seg# }"
 
-printf "$out\n"
+# "$out" carries a git branch name, which comes from whatever repo is checked
+# out and can contain anything. Passing it as the format would let a branch named
+# "%2000000000d" make this script emit two gigabytes on every render.
+printf '%s\n' "$out"
+

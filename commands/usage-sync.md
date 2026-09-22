@@ -22,9 +22,16 @@ Do this:
 
    TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "2026-09-24T10:00:00" +%s
 
+   Check the result is a positive integer. If the conversion fails or returns
+   nothing, stop and tell the user — do not call the command without it. The
+   epoch is required, and `claude-usage` rejects a missing or zero value.
+
 4. Run:
 
    claude-usage --set-fable <percentUsed> <epoch> "<plan>"
+
+   It exits non-zero and prints why if anything is wrong. Check the exit status
+   rather than assuming it worked.
 
 5. Run `claude-usage` and show the user the refreshed report.
 
