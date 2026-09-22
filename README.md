@@ -38,7 +38,8 @@ them need to authenticate.
 ## Install
 
 ```bash
-./install.sh
+git clone https://github.com/compil3r-ofc/claude-usage.git
+cd claude-usage && ./install.sh
 ```
 
 It registers the status line in `~/.claude/settings.json` (backing up what was
@@ -118,7 +119,8 @@ Run the checks with `menubar/selftest.sh`.
 
 ## Sharing with the team
 
-Everything lives in this directory. A co-worker clones it and runs `./install.sh`.
+A co-worker clones the repo and runs `./install.sh`, then `cd menubar && ./build.sh`
+for the menu bar app.
 Requirements: macOS, Claude Code v2.1.x or newer, and a Pro or Max subscription
 (the `rate_limits` block is absent on API-key and gateway setups — both readers
 say so rather than showing zeros).
